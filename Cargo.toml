@@ -1,0 +1,17 @@
+[package]
+name = "more-sync"
+version = "0.1.0"
+authors = ["Jing Yang <ditsing@gmail.com>"]
+edition = "2018"
+description = "More synchronization utils."
+documentation = "https://docs.rs/more-sync"
+readme = "README.md"
+homepage = "https://github.com/ditsing/more-sync"
+repository = "https://github.com/ditsing/more-sync"
+license = "MIT"
+keywords = ["sync", "synchronization"]
+categories = ["concurrency"]
+
+[dependencies]
+
+[dev-dependencies]
