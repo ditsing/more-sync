@@ -3,6 +3,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
+/// A Carrier that manages the lifetime of an instance of type `T`.
+///
+/// The carrier owns the instance (the `target`). References to the `target` can
+/// be obtained by calling the [`create_ref`](`Carrier::create_ref`) method. The
+/// references returned by the method will be valid as long as the reference is
+/// alive.
+///
+/// The carrier can be [*closed*](`Carrier::close`), after which no new
+/// references can be obtained. The carrier can also [*wait*](`Carrier::wait`)
+/// for all references it gave out to be dropped. The ownership of `target` will
+/// be returned to the caller after the wait is complete. The caller can then
+/// carry out clean-ups or any other type of work that requires an owned
+/// instance of type `T`.
 pub struct Carrier<T> {
     template: Arc<CarrierTarget<T>>,
     shutdown: AtomicBool,
