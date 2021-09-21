@@ -125,6 +125,9 @@ impl<T> CarrierTarget<T> {
     }
 }
 
+/// A reference to an object owned by a [`Carrier`](`Carrier`).
+///
+/// The target will be alive for as long as this reference is alive.
 #[derive(Default)]
 pub struct CarrierRef<T> {
     inner: Arc<CarrierTarget<T>>,
