@@ -17,7 +17,8 @@ use std::time::Duration;
 /// carry out clean-ups or any other type of work that requires an owned
 /// instance of type `T`.
 pub struct Carrier<T> {
-    template: Arc<CarrierTarget<T>>,
+    // Visible to tests.
+    pub(self) template: Arc<CarrierTarget<T>>,
     shutdown: AtomicBool,
 }
 
@@ -51,7 +52,11 @@ impl<T> Carrier<T> {
 
     fn unwrap_or_panic(self) -> T {
         let arc = self.template;
-        assert_eq!(Arc::strong_count(&arc), 1);
+        assert_eq!(
+            Arc::strong_count(&arc),
+            1,
+            "The carrier should not more than one outstanding Arc"
+        );
 
         match Arc::try_unwrap(arc) {
             Ok(t) => t.target,
@@ -162,5 +167,77 @@ impl<T> Deref for CarrierRef<T> {
 impl<T> Drop for CarrierRef<T> {
     fn drop(&mut self) {
         self.delete()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Carrier;
+    use std::cell::RefCell;
+    use std::time::Duration;
+
+    #[test]
+    fn test_basics() {
+        let carrier = Carrier::new(7usize);
+
+        let ref_one = carrier.create_ref().unwrap();
+        let ref_two = carrier.create_ref().unwrap();
+        // Carrier should be send.
+        let (ref_three, carrier) =
+            std::thread::spawn(|| (carrier.create_ref(), carrier))
+                .join()
+                .expect("Thread creation should never fail");
+        let ref_three = ref_three.unwrap();
+
+        assert_eq!(*ref_one, 7usize);
+        assert_eq!(*ref_two, 7usize);
+        assert_eq!(*ref_three, 7usize);
+
+        carrier.close();
+        // Double close is OK.
+        carrier.close();
+
+        assert!(carrier.create_ref().is_none());
+        // Create should always fail.
+        assert!(carrier.create_ref().is_none());
+
+        assert_eq!(carrier.ref_count(), 3);
+
+        let carrier =
+            carrier.wait_timeout(Duration::from_micros(1)).expect_err(
+                "Wait should not be successful \
+                since there are outstanding references",
+            );
+
+        drop(ref_one);
+        assert_eq!(carrier.ref_count(), 2);
+        drop(ref_two);
+        assert_eq!(carrier.ref_count(), 1);
+        drop(ref_three);
+        assert_eq!(carrier.ref_count(), 0);
+        assert_eq!(carrier.wait(), 7usize);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_panic_outstanding_arc() {
+        let carrier = Carrier::new(7usize);
+        let _outstanding_ref = carrier.template.clone();
+
+        // Carrier should panic when it sees an outstanding Arc.
+        carrier.wait();
+    }
+
+    #[test]
+    fn test_ref() {
+        let carrier = Carrier::new(RefCell::new(7usize));
+        let ref_one = carrier.create_ref().unwrap();
+        let ref_two = carrier.create_ref().unwrap();
+
+        *ref_two.borrow_mut() += 1;
+        assert_eq!(8, *ref_one.borrow());
+
+        *ref_one.borrow_mut() += 1;
+        assert_eq!(9, *ref_two.borrow());
     }
 }
