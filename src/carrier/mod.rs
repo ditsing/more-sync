@@ -16,6 +16,30 @@ use std::time::Duration;
 /// be returned to the caller after the wait is complete. The caller can then
 /// carry out clean-ups or any other type of work that requires an owned
 /// instance of type `T`.
+///
+/// ```
+/// use more_sync::Carrier;
+///
+/// // Create a carrier that holds a mutex.
+/// let carrier = Carrier::new(std::sync::Mutex::new(7usize));
+///
+/// // Ask for a reference to the value held by the carrier.
+/// let ref_one = carrier.create_ref().unwrap();
+/// assert_eq!(*ref_one.lock().unwrap(), 7);
+///
+/// // Reference returned by Carrier can be sent to another thread.
+/// std::thread::spawn(move || *ref_one.lock().unwrap() = 8usize);
+///
+/// // Close the carrier, no new references can be created.
+/// carrier.close();
+/// assert!(carrier.create_ref().is_none());
+///
+/// // Shutdown the carrier and wait for all references to be dropped.
+/// // The value held by carrier is returned.
+/// let mutex_value = carrier.wait();
+/// // Destroy the mutex.
+/// assert!(matches!(mutex_value.into_inner(), Ok(8usize)));
+///
 pub struct Carrier<T> {
     // Visible to tests.
     pub(self) template: Arc<CarrierTarget<T>>,
