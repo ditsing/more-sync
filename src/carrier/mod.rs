@@ -58,10 +58,6 @@ impl<T> Carrier<T> {
         }
     }
 
-    pub fn ref_count(&self) -> usize {
-        *self.template.lock_count()
-    }
-
     pub fn create_ref(&self) -> Option<CarrierRef<T>> {
         if !self.shutdown.load(Ordering::Acquire) {
             Some(CarrierRef::new(&self.template))
@@ -70,8 +66,16 @@ impl<T> Carrier<T> {
         }
     }
 
+    pub fn ref_count(&self) -> usize {
+        *self.template.lock_count()
+    }
+
     pub fn close(&self) {
         self.shutdown.store(true, Ordering::Release);
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.shutdown.load(Ordering::Acquire)
     }
 
     fn unwrap_or_panic(self) -> T {
@@ -221,8 +225,10 @@ mod tests {
         assert_eq!(*ref_three, 7usize);
 
         carrier.close();
+        assert!(carrier.is_closed());
         // Double close is OK.
         carrier.close();
+        assert!(carrier.is_closed());
 
         assert!(carrier.create_ref().is_none());
         // Create should always fail.
