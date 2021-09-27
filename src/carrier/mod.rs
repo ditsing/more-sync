@@ -47,6 +47,7 @@ pub struct Carrier<T> {
 }
 
 impl<T> Carrier<T> {
+    /// Create a carrier that carries and owns `target`.
     pub fn new(target: T) -> Self {
         Self {
             template: Arc::new(CarrierTarget {
@@ -58,6 +59,8 @@ impl<T> Carrier<T> {
         }
     }
 
+    /// Creates a reference to the owned instance. Returns `None` if the carrier
+    /// has been closed.
     pub fn create_ref(&self) -> Option<CarrierRef<T>> {
         if !self.shutdown.load(Ordering::Acquire) {
             Some(CarrierRef::new(&self.template))
@@ -66,14 +69,26 @@ impl<T> Carrier<T> {
         }
     }
 
+    /// Returns the number of outstanding references created by this carrier.
+    ///
+    /// The returned value is obsolete as soon as this method returns. The count
+    /// can change at any time.
     pub fn ref_count(&self) -> usize {
         *self.template.lock_count()
     }
 
+    /// Closes this carrier.
+    ///
+    /// No new references can be created after the carrier is closed. A closed
+    /// carrier cannot be re-opened again.
     pub fn close(&self) {
         self.shutdown.store(true, Ordering::Release);
     }
 
+    /// Returns `true` if the carrier has been closed, `false` otherwise.
+    ///
+    /// For the same carrier, once this method returns `true` it will never
+    /// return `false` again.
     pub fn is_closed(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
     }
@@ -94,6 +109,11 @@ impl<T> Carrier<T> {
         }
     }
 
+    /// Blocks the current thread until all references created by this carrier
+    /// are dropped.
+    ///
+    /// [`wait()`](Carrier::wait) consumes the carrier and returns the owned
+    /// instance. It returns immediately if all references have been dropped.
     pub fn wait(self) -> T {
         {
             let count = self.template.lock_count();
@@ -108,6 +128,12 @@ impl<T> Carrier<T> {
         self.unwrap_or_panic()
     }
 
+    /// Like [`wait()`](`Carrier::wait`), but waits for at most `timeout`.
+    ///
+    /// Returns `Ok` and the owned instance if the wait was successful. Returns
+    /// `Err(self)` if timed out. The reference count can change at any time. It
+    /// is **not** guaranteed that the number of references is greater than zero
+    /// when this method returns.
     pub fn wait_timeout(self, timeout: Duration) -> Result<T, Self> {
         let count = {
             let count = self.template.lock_count();
@@ -126,11 +152,21 @@ impl<T> Carrier<T> {
         }
     }
 
+    /// Closes the carrier and waits for all references to be dropped.
+    ///
+    /// A [`close()`](`Carrier::close`) followed by a
+    /// [`wait()`](`Carrier::wait`). See the comments in those two methods.
     pub fn shutdown(self) -> T {
         self.close();
         self.wait()
     }
 
+    /// Like [`shutdown()`](`Carrier::shutdown`), but waits for at most
+    /// `timeout`.
+    ///
+    /// A [`close()`](`Carrier::close`) followed by a
+    /// [`wait_timeout()`](`Carrier::wait_timeout`). See the comments in those
+    /// two methods.
     pub fn shutdown_timeout(self, timeout: Duration) -> Result<T, Self> {
         self.close();
         self.wait_timeout(timeout)
