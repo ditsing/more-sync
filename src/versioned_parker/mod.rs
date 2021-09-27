@@ -32,7 +32,7 @@ use std::time::Duration;
 /// });
 ///
 /// guard.wait();
-/// assert_eq!(guard.notify_count(), 1);
+/// assert_eq!(guard.notified_count(), 1);
 /// assert_eq!(*guard, 16);
 /// ```
 #[derive(Default, Clone)]
@@ -54,6 +54,8 @@ impl<T> Inner<T> {
 }
 
 impl<T> VersionedParker<T> {
+    /// Creates a new `VersionedParker`, with the initial version being `0`, and
+    /// the shared data being `data`.
     pub fn new(data: T) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -64,12 +66,16 @@ impl<T> VersionedParker<T> {
         }
     }
 
+    /// Locks the shared data and the version.
+    ///
+    /// A thread can then call [`VersionedGuard::wait()`] to wait for version
+    /// changes.
     pub fn lock(&self) -> VersionedGuard<T> {
         let guard = self.inner.data.lock().unwrap();
         VersionedGuard {
             parker: self.inner.as_ref(),
             guard: Some(guard),
-            notify_count: 0,
+            notified_count: 0,
         }
     }
 
@@ -92,18 +98,29 @@ impl<T> VersionedParker<T> {
         return false;
     }
 
+    /// Increases the version and notifies one blocked thread.
     pub fn notify_one(&self) {
         self.do_notify(None, |_| {}, Condvar::notify_one);
     }
 
+    /// Increases the version, mutates the shared data and notifies one blocked
+    /// thread.
     pub fn notify_one_mutate(&self, mutate: fn(&mut T)) {
         self.do_notify(None, mutate, Condvar::notify_one);
     }
 
+    /// Increases the version and notifies one blocked thread, if the current
+    /// version is `expected_version`.
+    ///
+    /// Returns `true` if the version matches.
     pub fn try_notify_one(&self, expected_version: usize) -> bool {
         self.do_notify(Some(expected_version), |_| {}, Condvar::notify_one)
     }
 
+    /// Increases the version, modifies the shared data and notifies one blocked
+    /// thread, if the current version is `expected_version`.
+    ///
+    /// Returns `true` if the version matches.
     pub fn try_notify_one_mutate(
         &self,
         expected_version: usize,
@@ -112,18 +129,29 @@ impl<T> VersionedParker<T> {
         self.do_notify(Some(expected_version), mutate, Condvar::notify_one)
     }
 
+    /// Increases the version and notifies all blocked threads.
     pub fn notify_all(&self) {
         self.do_notify(None, |_| {}, Condvar::notify_all);
     }
 
+    /// Increases the version, modifies the shared data and notifies all blocked
+    /// threads.
     pub fn notify_all_mutate(&self, mutate: fn(&mut T)) {
         self.do_notify(None, mutate, Condvar::notify_all);
     }
 
+    /// Increases the version and notifies all blocked threads, if the current
+    /// version is `expected_version`.
+    ///
+    /// Returns `true` if the version matches.
     pub fn try_notify_all(&self, expected_version: usize) -> bool {
         self.do_notify(Some(expected_version), |_| {}, Condvar::notify_all)
     }
 
+    /// Increases the version, modifies the shared data and notifies all blocked
+    /// threads, if the current version is `expected_version`.
+    ///
+    /// Returns `true` if the version matches.
     pub fn try_notify_all_mutate(
         &self,
         expected_version: usize,
@@ -132,6 +160,7 @@ impl<T> VersionedParker<T> {
         self.do_notify(Some(expected_version), mutate, Condvar::notify_all)
     }
 
+    /// Returns the current version.
     pub fn version(&self) -> usize {
         self.inner.version()
     }
@@ -141,30 +170,46 @@ impl<T> VersionedParker<T> {
 pub struct VersionedGuard<'a, T> {
     parker: &'a Inner<T>,
     guard: Option<MutexGuard<'a, T>>,
-    notify_count: usize,
+    notified_count: usize,
 }
 
 impl<'a, T> VersionedGuard<'a, T> {
+    /// Returns the current version.
+    ///
+    /// The version will not change unless [`wait()`](`VersionedGuard::wait`) or
+    /// [`wait_timeout()`](`VersionedGuard::wait_timeout`) is called.
     pub fn version(&self) -> usize {
         self.parker.version()
     }
 
+    /// Returns if we were notified during last period.
+    ///
+    /// If we never waited, `notified()` returns false.
     pub fn notified(&self) -> bool {
-        self.notify_count != 0
+        self.notified_count != 0
     }
 
-    pub fn notify_count(&self) -> usize {
-        self.notify_count
+    /// Returns the number of times we were notified during last wait.
+    ///
+    /// If we never waited, `notification_count()` returns 0.
+    pub fn notified_count(&self) -> usize {
+        self.notified_count
     }
 
+    /// Blocks the current thread until notified.
+    ///
+    /// `wait()` updates the version stored in this guard.
     pub fn wait(&mut self) {
         let guard = self.guard.take().unwrap();
         let version = self.parker.version();
 
         self.guard = Some(self.parker.condvar.wait(guard).unwrap());
-        self.notify_count = self.parker.version() - version;
+        self.notified_count = self.parker.version() - version;
     }
 
+    /// Blocks the current thread until notified, for up to `timeout`.
+    ///
+    /// `wait_timeout()` updates the version stored in this guard.
     pub fn wait_timeout(&mut self, timeout: Duration) -> WaitTimeoutResult {
         let guard = self.guard.take().unwrap();
         let version = self.parker.version();
@@ -172,7 +217,7 @@ impl<'a, T> VersionedGuard<'a, T> {
             self.parker.condvar.wait_timeout(guard, timeout).unwrap();
 
         self.guard = Some(guard_result);
-        self.notify_count = self.parker.version() - version;
+        self.notified_count = self.parker.version() - version;
 
         wait_result
     }
@@ -213,7 +258,7 @@ mod tests {
         std::thread::spawn(move || parker_clone.notify_one_mutate(|i| *i = 64));
         guard.wait();
 
-        assert_eq!(guard.notify_count(), 1);
+        assert_eq!(guard.notified_count(), 1);
         assert_eq!(*guard, 64);
     }
 
@@ -231,7 +276,7 @@ mod tests {
         });
 
         guard.wait();
-        let expected_value = match guard.notify_count() {
+        let expected_value = match guard.notified_count() {
             1 => 0,
             2 => 128,
             3 => 256,
@@ -253,7 +298,7 @@ mod tests {
         });
 
         guard.wait();
-        assert_eq!(guard.notify_count(), 1);
+        assert_eq!(guard.notified_count(), 1);
         assert_eq!(*guard, 0);
     }
 
@@ -269,7 +314,7 @@ mod tests {
         });
 
         guard.wait();
-        assert_eq!(guard.notify_count(), 1);
+        assert_eq!(guard.notified_count(), 1);
         assert_eq!(*guard, 1024);
     }
 }
