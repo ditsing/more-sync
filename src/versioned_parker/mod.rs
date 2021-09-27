@@ -3,6 +3,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, WaitTimeoutResult};
 use std::time::Duration;
 
+/// A thread parking and locking primitive that provide version numbers.
+///
+/// Like an [`std::sync::Condvar`], `VersionedParker` provides a `wait`
+/// method and several `notify` methods. The `wait` method blocks the current
+/// thread, while the `notify` methods unblocks waiting threads. Each time
+/// `notify` is called, an internal counter is increased. When a blocked thread
+/// waits up, it can check the internal counter and learn how many times it has
+/// been notified. The version can be obtained by calling method
+/// [`VersionedParker::version()`].
+///
+/// `VersionedParker` holds a piece of data that can be modified during `notify`
+/// and `wait` operations. The data is versioned by the same internal counter.
 ///
 /// ```
 /// use more_sync::VersionedParker;
@@ -50,7 +62,7 @@ impl<T> VersionedParker<T> {
         }
     }
 
-    fn version(&self) -> usize {
+    pub fn version(&self) -> usize {
         self.inner.version()
     }
 
@@ -123,6 +135,7 @@ impl<T> VersionedParker<T> {
     }
 }
 
+/// Mutex guard returned by [`VersionedParker::lock`].
 pub struct VersionedGuard<'a, T> {
     parker: &'a Inner<T>,
     guard: Option<MutexGuard<'a, T>>,
