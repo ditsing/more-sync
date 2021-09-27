@@ -8,13 +8,14 @@ use std::time::Duration;
 /// Like an [`std::sync::Condvar`], `VersionedParker` provides a `wait`
 /// method and several `notify` methods. The `wait` method blocks the current
 /// thread, while the `notify` methods unblocks waiting threads. Each time
-/// `notify` is called, an internal counter is increased. When a blocked thread
+/// `notify` is called, the parker version is increased. When a blocked thread
 /// waits up, it can check the internal counter and learn how many times it has
 /// been notified. The version can be obtained by calling method
 /// [`VersionedParker::version()`].
 ///
 /// `VersionedParker` holds a piece of data that can be modified during `notify`
-/// and `wait` operations. The data is versioned by the same internal counter.
+/// and `wait` operations. The data is versioned also versioned by the same
+/// parker version.
 ///
 /// ```
 /// use more_sync::VersionedParker;
@@ -25,6 +26,7 @@ use std::time::Duration;
 /// let parker_clone = versioned_parker.clone();
 /// std::thread::spawn(move || {
 ///     parker_clone.notify_one_mutate(|i| *i = 16);
+///     assert_eq!(parker_clone.version(), 1);
 ///     // Version is 1, try_notify_all() should fail.
 ///     assert!(!parker_clone.try_notify_all(0));
 /// });
@@ -62,8 +64,13 @@ impl<T> VersionedParker<T> {
         }
     }
 
-    pub fn version(&self) -> usize {
-        self.inner.version()
+    pub fn lock(&self) -> VersionedGuard<T> {
+        let guard = self.inner.data.lock().unwrap();
+        VersionedGuard {
+            parker: self.inner.as_ref(),
+            guard: Some(guard),
+            notify_count: 0,
+        }
     }
 
     fn do_notify(
@@ -125,13 +132,8 @@ impl<T> VersionedParker<T> {
         self.do_notify(Some(expected_version), mutate, Condvar::notify_all)
     }
 
-    pub fn lock(&self) -> VersionedGuard<T> {
-        let guard = self.inner.data.lock().unwrap();
-        VersionedGuard {
-            parker: self.inner.as_ref(),
-            guard: Some(guard),
-            notify_count: 0,
-        }
+    pub fn version(&self) -> usize {
+        self.inner.version()
     }
 }
 
