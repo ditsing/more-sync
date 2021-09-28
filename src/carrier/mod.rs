@@ -40,6 +40,7 @@ use std::time::Duration;
 /// // Destroy the mutex.
 /// assert!(matches!(mutex_value.into_inner(), Ok(8usize)));
 ///
+#[derive(Debug, Default)]
 pub struct Carrier<T> {
     // Visible to tests.
     pub(self) template: Arc<CarrierTarget<T>>,
@@ -173,7 +174,7 @@ impl<T> Carrier<T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct CarrierTarget<T> {
     target: T,
 

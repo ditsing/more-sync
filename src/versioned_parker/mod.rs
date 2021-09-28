@@ -35,12 +35,12 @@ use std::time::Duration;
 /// assert_eq!(guard.notified_count(), 1);
 /// assert_eq!(*guard, 16);
 /// ```
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct VersionedParker<T> {
     inner: Arc<Inner<T>>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Inner<T> {
     version: AtomicUsize,
     data: Mutex<T>,
@@ -167,6 +167,7 @@ impl<T> VersionedParker<T> {
 }
 
 /// Mutex guard returned by [`VersionedParker::lock`].
+#[derive(Debug)]
 pub struct VersionedGuard<'a, T> {
     parker: &'a Inner<T>,
     guard: Option<MutexGuard<'a, T>>,
