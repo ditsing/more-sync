@@ -9,7 +9,7 @@ use std::time::Duration;
 /// method and several `notify` methods. The `wait` method blocks the current
 /// thread, while the `notify` methods unblocks waiting threads. Each time
 /// `notify` is called, the parker version is increased. When a blocked thread
-/// waits up, it can check the internal counter and learn how many times it has
+/// wakes up, it can check the internal counter and learn how many times it has
 /// been notified. The version can be obtained by calling method
 /// [`VersionedParker::version()`].
 ///
