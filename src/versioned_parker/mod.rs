@@ -95,7 +95,7 @@ impl<T> VersionedParker<T> {
             notify(&self.inner.condvar);
             return true;
         }
-        return false;
+        false
     }
 
     /// Increases the version and notifies one blocked thread.
