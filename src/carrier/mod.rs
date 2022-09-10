@@ -174,6 +174,20 @@ impl<T> Carrier<T> {
     }
 }
 
+impl<T> AsRef<T> for Carrier<T> {
+    fn as_ref(&self) -> &T {
+        &self.template.target
+    }
+}
+
+impl<T> Deref for Carrier<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template.deref().target
+    }
+}
+
 #[derive(Debug, Default)]
 struct CarrierTarget<T> {
     target: T,
@@ -220,7 +234,7 @@ impl<T> CarrierRef<T> {
 
 impl<T> AsRef<T> for CarrierRef<T> {
     fn as_ref(&self) -> &T {
-        &self.inner.as_ref().target
+        &self.inner.target
     }
 }
 
@@ -247,6 +261,7 @@ mod tests {
     #[test]
     fn test_basics() {
         let carrier = Carrier::new(7usize);
+        assert_eq!(*carrier, 7usize);
 
         let ref_one = carrier.create_ref().unwrap();
         let ref_two = carrier.create_ref().unwrap();
@@ -306,8 +321,10 @@ mod tests {
 
         *ref_two.borrow_mut() += 1;
         assert_eq!(8, *ref_one.borrow());
+        assert_eq!(8, *carrier.borrow());
 
         *ref_one.borrow_mut() += 1;
         assert_eq!(9, *ref_two.borrow());
+        assert_eq!(9, *carrier.borrow());
     }
 }
