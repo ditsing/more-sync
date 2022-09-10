@@ -10,7 +10,7 @@ use std::time::Duration;
 /// references returned by the method will be valid as long as the reference is
 /// alive.
 ///
-/// The carrier can be [*closed*](`Carrier::close`), after which no new
+/// The carrier can be [*frozen*](`Carrier::freeze`), after which no new
 /// references can be obtained. The carrier can also [*wait*](`Carrier::wait`)
 /// for all references it gave out to be dropped. The ownership of `target` will
 /// be returned to the caller after the wait is complete. The caller can then
@@ -31,7 +31,7 @@ use std::time::Duration;
 /// std::thread::spawn(move || *ref_one.lock().unwrap() = 8usize);
 ///
 /// // Close the carrier, no new references can be created.
-/// carrier.close();
+/// carrier.freeze();
 /// assert!(carrier.create_ref().is_none());
 ///
 /// // Shutdown the carrier and wait for all references to be dropped.
@@ -61,7 +61,7 @@ impl<T> Carrier<T> {
     }
 
     /// Creates a reference to the owned instance. Returns `None` if the carrier
-    /// has been closed.
+    /// has been frozen.
     pub fn create_ref(&self) -> Option<CarrierRef<T>> {
         if !self.shutdown.load(Ordering::Acquire) {
             Some(CarrierRef::new(&self.template))
@@ -80,17 +80,17 @@ impl<T> Carrier<T> {
 
     /// Closes this carrier.
     ///
-    /// No new references can be created after the carrier is closed. A closed
+    /// No new references can be created after the carrier is frozen. A frozen
     /// carrier cannot be re-opened again.
-    pub fn close(&self) {
+    pub fn freeze(&self) {
         self.shutdown.store(true, Ordering::Release);
     }
 
-    /// Returns `true` if the carrier has been closed, `false` otherwise.
+    /// Returns `true` if the carrier has been frozen, `false` otherwise.
     ///
     /// For the same carrier, once this method returns `true` it will never
     /// return `false` again.
-    pub fn is_closed(&self) -> bool {
+    pub fn is_frozen(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
     }
 
@@ -155,21 +155,21 @@ impl<T> Carrier<T> {
 
     /// Closes the carrier and waits for all references to be dropped.
     ///
-    /// A [`close()`](`Carrier::close`) followed by a
+    /// A [`freeze()`](`Carrier::freeze`) followed by a
     /// [`wait()`](`Carrier::wait`). See the comments in those two methods.
     pub fn shutdown(self) -> T {
-        self.close();
+        self.freeze();
         self.wait()
     }
 
     /// Like [`shutdown()`](`Carrier::shutdown`), but waits for at most
     /// `timeout`.
     ///
-    /// A [`close()`](`Carrier::close`) followed by a
+    /// A [`freeze()`](`Carrier::freeze`) followed by a
     /// [`wait_timeout()`](`Carrier::wait_timeout`). See the comments in those
     /// two methods.
     pub fn shutdown_timeout(self, timeout: Duration) -> Result<T, Self> {
-        self.close();
+        self.freeze();
         self.wait_timeout(timeout)
     }
 }
@@ -276,11 +276,11 @@ mod tests {
         assert_eq!(*ref_two, 7usize);
         assert_eq!(*ref_three, 7usize);
 
-        carrier.close();
-        assert!(carrier.is_closed());
-        // Double close is OK.
-        carrier.close();
-        assert!(carrier.is_closed());
+        carrier.freeze();
+        assert!(carrier.is_frozen());
+        // Double freeze is OK.
+        carrier.freeze();
+        assert!(carrier.is_frozen());
 
         assert!(carrier.create_ref().is_none());
         // Create should always fail.
